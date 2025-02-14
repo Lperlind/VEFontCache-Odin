@@ -22,6 +22,17 @@ Ttf_u16 :: u16be
 Ttf_i32 :: i32be
 Ttf_i16 :: i16be
 
+Glyph_Coordinate_Type :: enum u8 {
+	new_curve,
+	point,
+	quadratic,
+}
+
+Glyph_Curves :: struct {
+	coordinates: [][2]f32,
+	type: []Glyph_Coordinate_Type,
+}
+
 Ttf_Font :: struct {
 	codepoint_to_glyph_index_map: map[rune]u32,
 	glyphs: []Ttf_Glyph,
@@ -39,9 +50,11 @@ Ttf_Read_Context :: struct {
 
 Ttf_Glyph_Contour_Point :: struct {
 	coord: [2]f32,
-	control_point: bool,
+	on_curve: bool,
 }
 Ttf_Glyph :: struct {
+	unhinted_curves: Glyph_Curves,
+
 	ordered_contour_lengths: []u16,
 	points: #soa[]Ttf_Glyph_Contour_Point,
 	min, max: [2]f32,
@@ -530,7 +543,7 @@ Ttf_Parse_Glyf_Table_Result :: struct {
 	global_max: [2]f32,
 }
 
-ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, locas: []Ttf_Glyph_Loca, maxp: ^Ttf_Table_Maxp, allocator: mem.Allocator) -> (Ttf_Parse_Glyf_Table_Result, bool) {
+ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, locas: []Ttf_Glyph_Loca, maxp: ^Ttf_Table_Maxp, allocator: mem.Allocator, scratch: ^base.Arena) -> (Ttf_Parse_Glyf_Table_Result, bool) {
 	glyphs := make([]Ttf_Glyph, len(locas), allocator)
 	global_min: [2]f32 = math.INF_F32
 	global_max: [2]f32 = math.NEG_INF_F32
@@ -609,7 +622,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 				flags = ttf_read_t_slice(Ttf_Glyf_Single_Flags, &reader, i64(flags_bytes_parsed))
 			}
 			// NOTE(lucas): parse coordinates
-			_parse_coordinate :: proc(short_vec_flag: Ttf_Glyf_Single_Flag, is_same_flag: Ttf_Glyf_Single_Flag, number_of_points: int, flags: []Ttf_Glyf_Single_Flags, reader: ^Ttf_Reader, write_coordinate: [][2]f32, coord_index: int, write_control_points: []bool) {
+			_parse_coordinate :: proc(short_vec_flag: Ttf_Glyf_Single_Flag, is_same_flag: Ttf_Glyf_Single_Flag, number_of_points: int, flags: []Ttf_Glyf_Single_Flags, reader: ^Ttf_Reader, write_coordinate: [][2]f32, coord_index: int, write_on_curve_points: []bool) {
 				flags_parsed := 0
 				coordinates_added := 0
 				prev_coordinate: i16
@@ -636,7 +649,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 						coordinate += prev_coordinate
 						prev_coordinate = coordinate
 						write_coordinate[coordinates_added][coord_index] = f32(coordinate)
-						write_control_points[coordinates_added] = .on_curve not_in flag
+						write_on_curve_points[coordinates_added] = .on_curve in flag
 						coordinates_added += 1
 					}
 				}
@@ -644,15 +657,79 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 			glyph: Ttf_Glyph
 			glyph.points = make(#soa[]Ttf_Glyph_Contour_Point, number_of_points, allocator)
 			glyph.ordered_contour_lengths = make([]u16, len(end_pt_of_contours), allocator)
+			max_potential_length := i64(0)
 			for contour, i in end_pt_of_contours {
 				glyph.ordered_contour_lengths[i] = u16(contour) + 1
+				// NOTE(lucas): we add 1 again to account for the unhinted curves having the last
+				// point set to the first point
+				max_potential_length += i64(glyph.ordered_contour_lengths[i]) + 1
 				if (i > 0 && glyph.ordered_contour_lengths[i - 1] >= glyph.ordered_contour_lengths[i]) {
 					ctx.ok = false
 				}
 			}
-			coord, points := soa_unzip(glyph.points)
-			_parse_coordinate(.x_short_vector, .x_is_same, number_of_points, flags, &reader, coord, 0, points)
-			_parse_coordinate(.y_short_vector, .y_is_same, number_of_points, flags, &reader, coord, 1, points)
+			coord, on_curve := soa_unzip(glyph.points)
+			_parse_coordinate(.x_short_vector, .x_is_same, number_of_points, flags, &reader, coord, 0, on_curve)
+			_parse_coordinate(.y_short_vector, .y_is_same, number_of_points, flags, &reader, coord, 1, on_curve)
+			{
+				base.arena_temp_scope(scratch)
+				types := make([dynamic]Glyph_Coordinate_Type, max_potential_length * 2, scratch)
+				points := make([dynamic][2]f32, 0, max_potential_length * 2, scratch)
+				types_i := 0
+
+				start := 0
+				for contour_end_index in glyph.ordered_contour_lengths {
+					append(&types, Glyph_Coordinate_Type.new_curve)
+					actual_length := int(contour_end_index) - start
+					for i := 0; i < actual_length; i += 1 {
+						p0 := glyph.points[i + start]
+						if p0.on_curve {
+							// NOTE(lucas): p0 is on the curve so we just commit it as a point
+							append(&points, p0.coord)
+							append(&types, Glyph_Coordinate_Type.point)
+						} else {
+							// NOTE(lucas) p0 is not on the curve so we have some quadratic curve to solve
+							append(&points, p0.coord)
+							if i != 0 {
+								p1 := glyph.points[(i + 1) % actual_length + start]
+								new_point: [2]f32
+								if p1.on_curve {
+									new_point = p1.coord
+								} else {
+									// NOTE(lucas): implied point between p0 and p1
+									new_point = (p0.coord + p1.coord) * 0.5
+								}
+								append(&points, new_point)
+								append(&types, Glyph_Coordinate_Type.quadratic)
+							} else {
+								// NOTE(lucas): we do not have a on curve point yet! That means we'll need
+								// to patch in the 0th element later.
+								append(&types, Glyph_Coordinate_Type.point)
+							}
+						}
+					}
+					p0 := glyph.points[start]
+					if p0.on_curve {
+						append(&points, p0.coord)
+						append(&types, Glyph_Coordinate_Type.point)
+					} else if len(points) > 0 {
+						/*
+						p1 := p0
+						p0 = glyph.points[actual_length + start - 1]
+						if ! p0.on_curve {
+							// NOTE(lucas): implied point between p0 and p1
+							append(&points, (p0.coord + p1.coord) * 0.5)
+							append(&points, p0.coord)
+							append(&types, Glyph_Coordinate_Type.quadratic)
+						}
+						*/
+						// NOTE(lucas): patch the quadratic
+						points[0] = points[len(points) - 1]
+					}
+					start = actual_length
+				}
+
+				glyph.unhinted_curves = { slice.clone(points[:], allocator), slice.clone(types[:]) }
+			}
 			glyph.min = { f32(i16(head.x_min)), f32(i16(head.y_min)) }
 			glyph.max = { f32(i16(head.x_max)), f32(i16(head.y_max)) }
 			global_min = linalg.min(glyph.min, global_min)
@@ -748,7 +825,7 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 	maxp := ttf_parse_maxp_table(&ctx, parsed_table_data[.maxp]) or_return
 	locas := ttf_parse_loca_table(&ctx, parsed_table_data[.loca], head, maxp, scratch.arena) or_return
 	mapping := ttf_parse_cmap_table(&ctx, parsed_table_data[.cmap], TTF_CMAP_FORMATS_ALL, scratch.arena) or_return
-	glyf_result := ttf_parse_glyf_table(&ctx, parsed_table_data[.glyf], locas, maxp, allocator) or_return
+	glyf_result := ttf_parse_glyf_table(&ctx, parsed_table_data[.glyf], locas, maxp, allocator, scratch.arena) or_return
 	codepoint_to_glyph_index_map := make(map[rune]u32, len(mapping) * 2, allocator)
 	for m in mapping {
 		if m.glyph_index != 0 {

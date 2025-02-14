@@ -205,25 +205,15 @@ generate_glyph_pass_draw_list :: proc(draw_list : ^Draw_List, path : ^[dynamic]V
 				fill_path_via_fan_triangulation( draw_list, outside, path[:], scale, translate)
 				clear(path)
 			}
-			fallthrough
-
 		case .Line:
 			append( path, Vertex { pos = Vec2 { f32(edge.x), f32(edge.y)} } )
-			append( path, Vertex { pos = Vec2 { f32(edge.contour_x0), f32(edge.contour_y0)} } )
 
 		case .Curve:
-			/*
 			assert(len(path) > 0)
 			p0 := path[ len(path) - 1].pos
 			p1 := Vec2{ f32(edge.contour_x0), f32(edge.contour_y0) }
 			p2 := Vec2{ f32(edge.x), f32(edge.y) }
-			*/
 
-			p0 := Vec2{ f32(edge.x), f32(edge.y) }
-			p1 := Vec2{ f32(edge.contour_x0), f32(edge.contour_y0) }
-			p2 := Vec2{ f32(edge.contour_x1), f32(edge.contour_y1) }
-
-			append( path, Vertex { pos = p0  })
 			for index : f32 = 1; index <= curve_quality; index += 1 {
 				alpha := index * step
 				append( path, Vertex { pos = eval_point_on_bezier3(p0, p1, p2, alpha) } )
@@ -244,7 +234,6 @@ generate_glyph_pass_draw_list :: proc(draw_list : ^Draw_List, path : ^[dynamic]V
 
 
 	if len(path) > 0 {
-		append( path, Vertex { pos = path[0].pos } )
 		fill_path_via_fan_triangulation(draw_list, outside, path[:], scale, translate)
 	}
 

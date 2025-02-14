@@ -225,40 +225,24 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 			glyph_index = 0
 		}
 		if len(font.odin_info.glyphs) > 0 {
-			glyph_info := font.odin_info.glyphs[glyph_index]
-			shape = make(Parser_Glyph_Shape, 0, len(glyph_info.points), context.allocator)
+			glyph := font.odin_info.glyphs[glyph_index]
+			shape = make(Parser_Glyph_Shape, 0, len(glyph.points), context.allocator)
 
-			start := 0
-			for contour_end_index in glyph_info.ordered_contour_lengths {
-				actual_length := int(contour_end_index) - start
-				for i := 0; i < actual_length; i += 1 {
-					vert_type := Glyph_Vert_Type.Line
-					p0 := glyph_info.points[start + i]
-					p1 := glyph_info.points[start + ((i + 1) % actual_length)]
-
-					f_p0, f_p1, f_p2: [2]f32
-					if p0.control_point { // NOTE(lucas): implied coordinate
-						f_p0 = (p0.coord + p1.coord) * 0.5
-					} else {
-						f_p0 = p0.coord
-					}
-					f_p1 = p1.coord
-
-					if p1.control_point { // NOTE(lucas): quadratic
-						p2 := glyph_info.points[start + ((i + 2) % actual_length)]
-						if p2.control_point { // NOTE(lucas): implied coordinate
-							f_p2 = (p2.coord + p1.coord) * 0.5
-						} else {
-							f_p2 = p2.coord
-							i += 1
-						}
-						vert_type = .Curve
-					}
-					append(&shape, Parser_Glyph_Vertex {
-						i16(f_p0.x), i16(f_p0.y), i16(f_p1.x), i16(f_p1.y), i16(f_p2.x), i16(f_p2.y), vert_type, 0
-					})
+			point_i := 0
+			for t in glyph.unhinted_curves.type {
+				switch t {
+				case .new_curve:
+					append(&shape, Parser_Glyph_Vertex { i16(0), i16(0), 0, 0, 0, 0, .Move, 0 })
+				case .point:
+					on_curve := glyph.unhinted_curves.coordinates[point_i]
+					point_i += 1
+					append(&shape, Parser_Glyph_Vertex { i16(on_curve.x), i16(on_curve.y), 0, 0, 0, 0, .Line, 0 })
+				case .quadratic:
+					off_curve := glyph.unhinted_curves.coordinates[point_i]
+					on_curve := glyph.unhinted_curves.coordinates[point_i + 1]
+					point_i += 2
+					append(&shape, Parser_Glyph_Vertex { i16(on_curve.x), i16(on_curve.y), i16(off_curve.x), i16(off_curve.y), 0, 0, .Curve, 0 })
 				}
-				start = int(contour_end_index)
 			}
 		}
 		error = Allocator_Error.None
