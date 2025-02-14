@@ -672,14 +672,17 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 			_parse_coordinate(.y_short_vector, .y_is_same, number_of_points, flags, &reader, coord, 1, on_curve)
 			{
 				base.arena_temp_scope(scratch)
-				types := make([dynamic]Glyph_Coordinate_Type, max_potential_length * 2, scratch)
+				types := make([dynamic]Glyph_Coordinate_Type, 0, max_potential_length * 2, scratch)
 				points := make([dynamic][2]f32, 0, max_potential_length * 2, scratch)
 				types_i := 0
 
 				start := 0
 				for contour_end_index in glyph.ordered_contour_lengths {
-					append(&types, Glyph_Coordinate_Type.new_curve)
 					actual_length := int(contour_end_index) - start
+					if actual_length > 0 {
+						append(&types, Glyph_Coordinate_Type.new_curve)
+					}
+					quadratic_patch_point := 0
 					for i := 0; i < actual_length; i += 1 {
 						p0 := glyph.points[i + start]
 						if p0.on_curve {
@@ -694,6 +697,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 								new_point: [2]f32
 								if p1.on_curve {
 									new_point = p1.coord
+									i += 1 // NOTE(lucas): don't double count this coordinate
 								} else {
 									// NOTE(lucas): implied point between p0 and p1
 									new_point = (p0.coord + p1.coord) * 0.5
@@ -704,6 +708,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 								// NOTE(lucas): we do not have a on curve point yet! That means we'll need
 								// to patch in the 0th element later.
 								append(&types, Glyph_Coordinate_Type.point)
+								quadratic_patch_point = len(points) - 1
 							}
 						}
 					}
@@ -711,19 +716,9 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 					if p0.on_curve {
 						append(&points, p0.coord)
 						append(&types, Glyph_Coordinate_Type.point)
-					} else if len(points) > 0 {
-						/*
-						p1 := p0
-						p0 = glyph.points[actual_length + start - 1]
-						if ! p0.on_curve {
-							// NOTE(lucas): implied point between p0 and p1
-							append(&points, (p0.coord + p1.coord) * 0.5)
-							append(&points, p0.coord)
-							append(&types, Glyph_Coordinate_Type.quadratic)
-						}
-						*/
+					} else if actual_length > 0 {
 						// NOTE(lucas): patch the quadratic
-						points[0] = points[len(points) - 1]
+						points[quadratic_patch_point] = points[len(points) - 1]
 					}
 					start = actual_length
 				}
