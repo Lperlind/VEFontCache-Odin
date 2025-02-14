@@ -674,7 +674,6 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 				base.arena_temp_scope(scratch)
 				types := make([dynamic]Glyph_Coordinate_Type, 0, max_potential_length * 2, scratch)
 				points := make([dynamic][2]f32, 0, max_potential_length * 2, scratch)
-				types_i := 0
 
 				start := 0
 				for contour_end_index in glyph.ordered_contour_lengths {
@@ -714,8 +713,12 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 					}
 					p0 := glyph.points[start]
 					if p0.on_curve {
-						append(&points, p0.coord)
-						append(&types, Glyph_Coordinate_Type.point)
+						// NOTE(lucas): we only need to add in another point if the last
+						// point was on the curve
+						if glyph.points[start + actual_length - 1].on_curve {
+							append(&points, p0.coord)
+							append(&types, Glyph_Coordinate_Type.point)
+						} 
 					} else if actual_length > 0 {
 						// NOTE(lucas): patch the quadratic
 						points[quadratic_patch_point] = points[len(points) - 1]
