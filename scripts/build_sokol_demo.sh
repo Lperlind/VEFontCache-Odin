@@ -114,7 +114,7 @@ function build_SokolBackendDemo {
         "${flag_collection}${pkg_collection_thirdparty}"
         # "$flag_micro_architecture_native"
         "$flag_use_separate_modules"
-        "${flag_thread_count}${CoreCount_Physical}"
+        # "${flag_thread_count}${CoreCount_Physical}"
         # "$flag_optimize_none"
         # "$flag_optimize_minimal"
         "$flag_optimize_speed"

@@ -17,17 +17,18 @@ STB_Truetype:
 
 import "core:c"
 import stbtt    "thirdparty:stb/truetype"
-// import freetype "thirdparty:freetype"
+import ttf    "./ttf"
 
 Parser_Kind :: enum u32 {
 	STB_TrueType,
-	Freetype, // Currently not implemented.
+	Odin,
 }
 
 Parser_Font_Info :: struct {
 	label : string,
 	kind  : Parser_Kind,
 	stbtt_info : stbtt.fontinfo,
+	odin_info: ttf.Ttf_Font,
 	// freetype_info : freetype.Face
 	data : []byte,
 }
@@ -81,17 +82,24 @@ parser_stbtt_allocator_proc :: proc(
 
 parser_init :: proc( ctx : ^Parser_Context, kind : Parser_Kind, allocator := context.allocator )
 {
+	switch kind {
+	case .Odin:
+	case .STB_TrueType:
+		ctx.lib_backing = allocator
+		stbtt_allocator := stbtt.zpl_allocator { parser_stbtt_allocator_proc, & ctx.lib_backing }
+		stbtt.SetAllocator( stbtt_allocator )
+	}
 	ctx.kind        = kind
-	ctx.lib_backing = allocator
-
-	stbtt_allocator := stbtt.zpl_allocator { parser_stbtt_allocator_proc, & ctx.lib_backing }
-	stbtt.SetAllocator( stbtt_allocator )
 }
 
 parser_reload :: proc( ctx : ^Parser_Context, allocator := context.allocator) {
-	ctx.lib_backing = allocator
-	stbtt_allocator := stbtt.zpl_allocator { parser_stbtt_allocator_proc, & ctx.lib_backing }
-	stbtt.SetAllocator( stbtt_allocator )
+	switch ctx.kind {
+	case .STB_TrueType:
+		ctx.lib_backing = allocator
+		stbtt_allocator := stbtt.zpl_allocator { parser_stbtt_allocator_proc, & ctx.lib_backing }
+		stbtt.SetAllocator( stbtt_allocator )
+	case .Odin:
+	}
 }
 
 parser_shutdown :: proc( ctx : ^Parser_Context ) {
@@ -100,7 +108,14 @@ parser_shutdown :: proc( ctx : ^Parser_Context ) {
 
 parser_load_font :: proc( ctx : ^Parser_Context, label : string, data : []byte ) -> (font : Parser_Font_Info, error : b32)
 {
-	error = ! stbtt.InitFont( & font.stbtt_info, raw_data(data), 0 )
+	switch ctx.kind {
+	case .STB_TrueType:
+		error = ! stbtt.InitFont( & font.stbtt_info, raw_data(data), 0 )
+	case .Odin:
+		ok: bool
+		font.odin_info, ok = ttf.ttf_from_data(data, context.allocator)
+		error = ! ok
+	}
 
 	font.label = label
 	font.data  = data
@@ -110,8 +125,10 @@ parser_load_font :: proc( ctx : ^Parser_Context, label : string, data : []byte )
 
 parser_unload_font :: proc( font : ^Parser_Font_Info )
 {
-	// case .STB_TrueType:
-		// Do Nothing
+	switch font.kind {
+	case .Odin: ttf.ttf_delete(&font.odin_info)
+	case .STB_TrueType:
+	}
 }
 
 parser_find_glyph_index :: #force_inline proc "contextless" ( font : Parser_Font_Info, codepoint : rune ) -> (glyph_index : Glyph)
@@ -122,75 +139,171 @@ parser_find_glyph_index :: #force_inline proc "contextless" ( font : Parser_Font
 
 parser_free_shape :: #force_inline proc( font : Parser_Font_Info, shape : Parser_Glyph_Shape )
 {
-	shape     := shape
-	shape_raw := transmute( ^Raw_Dynamic_Array) & shape
-	stbtt.FreeShape( font.stbtt_info, transmute( [^]stbtt.vertex) shape_raw.data )
+	switch font.kind {
+	case .STB_TrueType:
+		shape     := shape
+		shape_raw := transmute( ^Raw_Dynamic_Array) & shape
+		stbtt.FreeShape( font.stbtt_info, transmute( [^]stbtt.vertex) shape_raw.data )
+	case .Odin:
+	}
 }
 
 parser_get_codepoint_horizontal_metrics :: #force_inline proc "contextless" ( font : Parser_Font_Info, codepoint : rune ) -> ( advance, to_left_side_glyph : i32 )
 {
-	stbtt.GetCodepointHMetrics( font.stbtt_info, codepoint, & advance, & to_left_side_glyph )
+	switch font.kind {
+	case .STB_TrueType:
+		stbtt.GetCodepointHMetrics( font.stbtt_info, codepoint, & advance, & to_left_side_glyph )
+	case .Odin:
+	}
 	return
 }
 
 parser_get_codepoint_kern_advance :: #force_inline proc "contextless" ( font : Parser_Font_Info, prev_codepoint, codepoint : rune ) -> i32
 {
-	kern := stbtt.GetCodepointKernAdvance( font.stbtt_info, prev_codepoint, codepoint )
-	return kern
+	switch font.kind {
+	case .STB_TrueType:
+		kern := stbtt.GetCodepointKernAdvance( font.stbtt_info, prev_codepoint, codepoint )
+		return kern
+	case .Odin:
+	}
+	return 0
 }
 
 parser_get_font_vertical_metrics :: #force_inline proc "contextless" ( font : Parser_Font_Info ) -> (ascent, descent, line_gap : i32 )
 {
-	stbtt.GetFontVMetrics( font.stbtt_info, & ascent, & descent, & line_gap )
+	switch font.kind {
+	case .STB_TrueType:
+		stbtt.GetFontVMetrics( font.stbtt_info, & ascent, & descent, & line_gap )
+	case .Odin:
+		return i32(font.odin_info.ascender), i32(font.odin_info.descender), i32(font.odin_info.line_gap)
+	}
 	return
 }
 
 parser_get_bounds :: #force_inline proc "contextless" ( font : Parser_Font_Info, glyph_index : Glyph ) -> (bounds : Range2)
 {
-	// profile(#procedure)
-	bounds_0, bounds_1 : Vec2i
+	glyph_index := glyph_index
+	switch font.kind {
+	case .STB_TrueType:
+		// profile(#procedure)
+		bounds_0, bounds_1 : Vec2i
 
-	x0, y0, x1, y1 : i32
-	success := cast(bool) stbtt.GetGlyphBox( font.stbtt_info, i32(glyph_index), & x0, & y0, & x1, & y1 )
+		x0, y0, x1, y1 : i32
+		success := cast(bool) stbtt.GetGlyphBox( font.stbtt_info, i32(glyph_index), & x0, & y0, & x1, & y1 )
 
-	bounds_0 = { x0, y0 }
-	bounds_1 = { x1, y1 }
-	bounds = { vec2(bounds_0), vec2(bounds_1) }
+		bounds_0 = { x0, y0 }
+		bounds_1 = { x1, y1 }
+		bounds = { vec2(bounds_0), vec2(bounds_1) }
+	case .Odin:
+		if glyph_index < 0 || int(glyph_index) >= len(font.odin_info.glyphs) {
+			glyph_index = 0
+		}
+		if len(font.odin_info.glyphs) > 0 {
+			glyph_info := font.odin_info.glyphs[glyph_index]
+			bounds = { glyph_info.min, glyph_info.max }
+		}
+	}
 	return
 }
 
 parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_index : Glyph ) -> (shape : Parser_Glyph_Shape, error : Allocator_Error)
 {
-	stb_shape : [^]stbtt.vertex
-	nverts    := stbtt.GetGlyphShape( font.stbtt_info, cast(i32) glyph_index, & stb_shape )
+	glyph_index := glyph_index
+	switch font.kind {
+	case .STB_TrueType:
+		stb_shape : [^]stbtt.vertex
+		nverts    := stbtt.GetGlyphShape( font.stbtt_info, cast(i32) glyph_index, & stb_shape )
 
-	shape_raw          := transmute( ^Raw_Dynamic_Array) & shape
-	shape_raw.data      = stb_shape
-	shape_raw.len       = int(nverts)
-	shape_raw.cap       = int(nverts)
-	shape_raw.allocator = nil_allocator()
-	error = Allocator_Error.None
+		shape_raw          := transmute( ^Raw_Dynamic_Array) & shape
+		shape_raw.data      = stb_shape
+		shape_raw.len       = int(nverts)
+		shape_raw.cap       = int(nverts)
+		shape_raw.allocator = nil_allocator()
+		error = Allocator_Error.None
+	case .Odin:
+		if glyph_index < 0 || int(glyph_index) >= len(font.odin_info.glyphs) {
+			glyph_index = 0
+		}
+		if len(font.odin_info.glyphs) > 0 {
+			glyph_info := font.odin_info.glyphs[glyph_index]
+			shape = make(Parser_Glyph_Shape, 0, len(glyph_info.points), context.allocator)
+
+			start := 0
+			for contour_end_index in glyph_info.ordered_contour_lengths {
+				actual_length := int(contour_end_index) - start
+				for i := 0; i < actual_length; i += 1 {
+					vert_type := Glyph_Vert_Type.Line
+					p0 := glyph_info.points[start + i]
+					p1 := glyph_info.points[start + ((i + 1) % actual_length)]
+
+					f_p0, f_p1, f_p2: [2]f32
+					if p0.control_point { // NOTE(lucas): implied coordinate
+						f_p0 = (p0.coord + p1.coord) * 0.5
+					} else {
+						f_p0 = p0.coord
+					}
+					f_p1 = p1.coord
+
+					if p1.control_point { // NOTE(lucas): quadratic
+						p2 := glyph_info.points[start + ((i + 2) % actual_length)]
+						if p2.control_point { // NOTE(lucas): implied coordinate
+							f_p2 = (p2.coord + p1.coord) * 0.5
+						} else {
+							f_p2 = p2.coord
+							i += 1
+						}
+						vert_type = .Curve
+					}
+					append(&shape, Parser_Glyph_Vertex {
+						i16(f_p0.x), i16(f_p0.y), i16(f_p1.x), i16(f_p1.y), i16(f_p2.x), i16(f_p2.y), vert_type, 0
+					})
+				}
+				start = int(contour_end_index)
+			}
+		}
+		error = Allocator_Error.None
+	}
 	return
 }
 
 parser_is_glyph_empty :: #force_inline proc "contextless" ( font : Parser_Font_Info, glyph_index : Glyph ) -> b32
 {
-	return stbtt.IsGlyphEmpty( font.stbtt_info, cast(c.int) glyph_index )
+	switch font.kind {
+	case .STB_TrueType:
+		return stbtt.IsGlyphEmpty( font.stbtt_info, cast(c.int) glyph_index )
+	case .Odin:
+	}
+	return false
 }
 
 parser_scale :: #force_inline proc "contextless" ( font : Parser_Font_Info, size : f32 ) -> f32
 {
-	// profile(#procedure)
 	size_scale := size > 0.0 ? parser_scale_for_mapping_em_to_pixels( font, size ) :  parser_scale_for_pixel_height( font, -size )
 	return size_scale
 }
 
 parser_scale_for_pixel_height :: #force_inline proc "contextless" ( font : Parser_Font_Info, size : f32 ) -> f32
 {
-	return stbtt.ScaleForPixelHeight( font.stbtt_info, size )
+	switch font.kind {
+	case .STB_TrueType:
+		return stbtt.ScaleForPixelHeight( font.stbtt_info, size )
+	case .Odin:
+		return size / (font.odin_info.ascender - font.odin_info.descender)
+	}
+	return 0
 }
 
 parser_scale_for_mapping_em_to_pixels :: #force_inline proc "contextless" ( font : Parser_Font_Info, size : f32 ) -> f32
 {
-	return stbtt.ScaleForMappingEmToPixels( font.stbtt_info, size )
+	switch font.kind {
+	case .STB_TrueType:
+		return stbtt.ScaleForMappingEmToPixels( font.stbtt_info, size )
+	case .Odin:
+		if font.odin_info.units_per_em == 0 {
+			return 0
+		} else {
+			return size / font.odin_info.units_per_em
+		}
+	}
+	return 0
 }

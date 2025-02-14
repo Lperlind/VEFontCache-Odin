@@ -8,6 +8,7 @@ import "core:math"
 import "core:math/rand"
 import "core:mem"
 import "core:os"
+import "core:log"
 import "core:strings"
 
 import ve       "../../vefontcache"
@@ -233,7 +234,7 @@ init :: proc "c" ()
 	shaper_opts := ve.Init_Shaper_Params_Default
 	shaper_opts.snap_glyph_position = true
  
-	ve.startup( & demo_ctx.ve_ctx, .STB_TrueType, allocator = context.allocator, 
+	ve.startup( & demo_ctx.ve_ctx, .Odin, allocator = context.allocator, 
 		glyph_draw_params = glyph_draw_opts,
 		shaper_params     = shaper_opts,
 		px_scalar         = 1.4,
