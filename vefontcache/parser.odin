@@ -264,12 +264,20 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 
 parser_is_glyph_empty :: #force_inline proc "contextless" ( font : Parser_Font_Info, glyph_index : Glyph ) -> b32
 {
+	glyph_index := glyph_index
 	switch font.kind {
 	case .STB_TrueType:
 		return stbtt.IsGlyphEmpty( font.stbtt_info, cast(c.int) glyph_index )
 	case .Odin:
+		if glyph_index < 0 || int(glyph_index) >= len(font.odin_info.glyphs) {
+			glyph_index = 0
+		}
+		if len(font.odin_info.glyphs) > 0 {
+			glyph := font.odin_info.glyphs[glyph_index]
+			return len(glyph.unhinted_curves.coordinates) == 0
+		}
 	}
-	return false
+	return true
 }
 
 parser_scale :: #force_inline proc "contextless" ( font : Parser_Font_Info, size : f32 ) -> f32
