@@ -154,6 +154,12 @@ parser_get_codepoint_horizontal_metrics :: #force_inline proc "contextless" ( fo
 	case .STB_TrueType:
 		stbtt.GetCodepointHMetrics( font.stbtt_info, codepoint, & advance, & to_left_side_glyph )
 	case .Odin:
+		glyph_index := font.odin_info.codepoint_to_glyph_index_map[codepoint]
+		if len(font.odin_info.glyphs) > 0 {
+			glyph := font.odin_info.glyphs[glyph_index]
+			advance = i32(glyph.advance)
+			to_left_side_glyph = i32(glyph.lsb)
+		}
 	}
 	return
 }

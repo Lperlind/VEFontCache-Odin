@@ -58,6 +58,7 @@ Ttf_Glyph :: struct {
 	ordered_contour_lengths: []u16,
 	points: #soa[]Ttf_Glyph_Contour_Point,
 	min, max: [2]f32,
+	lsb, advance: f32,
 	hinting_instructions: []byte,
 }
 
@@ -237,6 +238,15 @@ Ttf_Table_Cmap_Format_12_Group :: struct #packed {
 	start_glyph_code: Ttf_u32,
 }
 
+Ttf_Long_Hor_Metric_Record :: struct #packed {
+	advance_width: Ttf_u16,
+	lsb: Ttf_u16,
+}
+
+Ttf_Glyph_Horizontal_Info :: struct {
+	advance_width: f32
+}
+
 Ttf_Tag :: enum {
 	unknown, // NOTE(lucas): not an actual table 
 	cmap,
@@ -378,6 +388,31 @@ ttf_parse_maxp_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> (
 		ctx.ok = false
 	}
 	return result, ctx.ok
+}
+
+ttf_parse_hmtx_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, hhea: ^Ttf_Table_Horizontal_Header, glyphs: []Ttf_Glyph) -> (bool) {
+	if table.valid {
+		reader := Ttf_Reader { ctx, table.data, 0 }
+		metrics, _ := ttf_read_t_slice(Ttf_Long_Hor_Metric_Record, &reader, i64(hhea.number_of_h_metrics))
+		lsb, metrics_ok := ttf_read_t_slice(Ttf_Fword, &reader, i64(len(glyphs)) - i64(hhea.number_of_h_metrics))
+		if metrics_ok {
+			for m, i in metrics {
+				glyphs[i].lsb = f32(m.lsb)
+				glyphs[i].advance = f32(m.advance_width)
+			}
+			lsb_i := 0
+			advance := f32(hhea.advance_width_max)
+			for i in len(metrics)..<len(glyphs) {
+				glyphs[i].lsb = f32(lsb[lsb_i])
+				glyphs[i].advance = advance
+
+				lsb_i += 1
+			}
+		}
+	} else {
+		ctx.ok = false
+	}
+	return ctx.ok
 }
 
 ttf_parse_hhea_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> (^Ttf_Table_Horizontal_Header, bool) {
@@ -824,6 +859,7 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 	locas := ttf_parse_loca_table(&ctx, parsed_table_data[.loca], head, maxp, scratch.arena) or_return
 	mapping := ttf_parse_cmap_table(&ctx, parsed_table_data[.cmap], TTF_CMAP_FORMATS_ALL, scratch.arena) or_return
 	glyf_result := ttf_parse_glyf_table(&ctx, parsed_table_data[.glyf], locas, maxp, allocator, scratch.arena) or_return
+	ttf_parse_hmtx_table(&ctx, parsed_table_data[.hmtx], hhea, glyf_result.glyphs) or_return
 	codepoint_to_glyph_index_map := make(map[rune]u32, len(mapping) * 2, allocator)
 	for m in mapping {
 		if m.glyph_index != 0 {
