@@ -188,7 +188,7 @@ generate_glyph_pass_draw_list :: proc(draw_list : ^Draw_List, path : ^[dynamic]V
 {
 	curve_quality := curve_quality
 	curve_quality = 10
-	profile(#procedure)
+	//profile(#procedure)
 	outside := Vec2{bounds.p0.x - 21, bounds.p0.y - 33}
 
 	draw            := Draw_Call_Default
@@ -205,6 +205,7 @@ generate_glyph_pass_draw_list :: proc(draw_list : ^Draw_List, path : ^[dynamic]V
 				fill_path_via_fan_triangulation( draw_list, outside, path[:], scale, translate)
 				clear(path)
 			}
+			fallthrough
 		case .Line:
 			append( path, Vertex { pos = Vec2 { f32(edge.x), f32(edge.y)} } )
 
@@ -231,7 +232,6 @@ generate_glyph_pass_draw_list :: proc(draw_list : ^Draw_List, path : ^[dynamic]V
 				append( path, Vertex { pos = eval_point_on_bezier4(p0, p1, p2, p3, alpha) } )
 			}
 	}
-
 
 	if len(path) > 0 {
 		fill_path_via_fan_triangulation(draw_list, outside, path[:], scale, translate)

@@ -723,7 +723,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 						// NOTE(lucas): patch the quadratic
 						points[quadratic_patch_point] = points[len(points) - 1]
 					}
-					start = actual_length
+					start = int(contour_end_index)
 				}
 
 				glyph.unhinted_curves = { slice.clone(points[:], allocator), slice.clone(types[:]) }

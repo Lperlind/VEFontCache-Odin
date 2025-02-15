@@ -229,10 +229,16 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 			shape = make(Parser_Glyph_Shape, 0, len(glyph.points), context.allocator)
 
 			point_i := 0
-			for t in glyph.unhinted_curves.type {
+			for type_i := 0; type_i < len(glyph.unhinted_curves.type); type_i += 1 {
+				t := glyph.unhinted_curves.type[type_i]
 				switch t {
 				case .new_curve:
-					append(&shape, Parser_Glyph_Vertex { i16(0), i16(0), 0, 0, 0, 0, .Move, 0 })
+					on_curve := glyph.unhinted_curves.coordinates[point_i]
+					// NOTE(lucas): grabbing the next point here is just to replicate STB truetype behaviour and is not
+					// strictly necessary
+					type_i += 1
+					point_i += 1
+					append(&shape, Parser_Glyph_Vertex { i16(on_curve.x), i16(on_curve.y), 0, 0, 0, 0, .Move, 0 })
 				case .point:
 					on_curve := glyph.unhinted_curves.coordinates[point_i]
 					point_i += 1
