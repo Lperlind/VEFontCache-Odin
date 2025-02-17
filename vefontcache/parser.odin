@@ -16,6 +16,7 @@ STB_Truetype:
 */
 
 import "core:c"
+import "core:fmt"
 import stbtt    "thirdparty:stb/truetype"
 import ttf    "./ttf"
 
@@ -133,7 +134,12 @@ parser_unload_font :: proc( font : ^Parser_Font_Info )
 
 parser_find_glyph_index :: #force_inline proc "contextless" ( font : Parser_Font_Info, codepoint : rune ) -> (glyph_index : Glyph)
 {
-	glyph_index = transmute(Glyph) stbtt.FindGlyphIndex( font.stbtt_info, codepoint )
+	switch font.kind {
+	case .STB_TrueType:
+		glyph_index = transmute(Glyph) stbtt.FindGlyphIndex( font.stbtt_info, codepoint )
+	case .Odin:
+		glyph_index = Glyph(font.odin_info.codepoint_to_glyph_index_map[codepoint])
+	}
 	return
 }
 
@@ -166,13 +172,18 @@ parser_get_codepoint_horizontal_metrics :: #force_inline proc "contextless" ( fo
 
 parser_get_codepoint_kern_advance :: #force_inline proc "contextless" ( font : Parser_Font_Info, prev_codepoint, codepoint : rune ) -> i32
 {
+	kern: i32
 	switch font.kind {
 	case .STB_TrueType:
-		kern := stbtt.GetCodepointKernAdvance( font.stbtt_info, prev_codepoint, codepoint )
-		return kern
+			kern = stbtt.GetCodepointKernAdvance( font.stbtt_info, prev_codepoint, codepoint )
 	case .Odin:
+		prev_index := font.odin_info.codepoint_to_glyph_index_map[prev_codepoint]
+		kern_index := font.odin_info.codepoint_to_glyph_index_map[codepoint]
+		if len(font.odin_info.glyphs) > 0 {
+			kern = i32(font.odin_info.glyphs[prev_index].kerning[kern_index])
+		}
 	}
-	return 0
+	return kern
 }
 
 parser_get_font_vertical_metrics :: #force_inline proc "contextless" ( font : Parser_Font_Info ) -> (ascent, descent, line_gap : i32 )

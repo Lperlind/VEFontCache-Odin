@@ -68,6 +68,14 @@ arena_virtual_make :: proc(reserve_size: int = 0, commit_size: int = 0) -> (^Are
     return _arena_make(reserve_size, commit_size, .Virtual, {})
 }
 
+arena_calc_total_allocations :: proc(arena: ^Arena) -> int {
+    result: int
+    for it := arena; it != nil; it = it.next {
+        result += it.head
+    }
+    return result
+}
+
 @(private)
 _arena_make :: proc(reserve_size: int, commit_size: int, policy: Arena_Policy, backing_allocator: mem.Allocator) -> (result: ^Arena, mem_error: Allocator_Error){
     assert(reserve_size >= 0)

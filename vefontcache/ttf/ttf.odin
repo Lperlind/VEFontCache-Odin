@@ -21,6 +21,8 @@ Ttf_u32 :: u32be
 Ttf_u16 :: u16be
 Ttf_i32 :: i32be
 Ttf_i16 :: i16be
+Ttf_Offset16 :: u16be
+Ttf_Offset32 :: u16be
 
 Glyph_Coordinate_Type :: enum u8 {
 	new_curve,
@@ -34,7 +36,7 @@ Glyph_Curves :: struct {
 }
 
 Ttf_Font :: struct {
-	codepoint_to_glyph_index_map: map[rune]u32,
+	codepoint_to_glyph_index_map: map[rune]u16,
 	glyphs: []Ttf_Glyph,
 	min_glyph_extent, max_glyph_extent: [2]f32,
 	units_per_em: f32,
@@ -49,10 +51,11 @@ Ttf_Read_Context :: struct {
 }
 
 Ttf_Glyph_Contour_Point :: struct {
-	coord: [2]f32,
+	coord: [2]i16,
 	on_curve: bool,
 }
 Ttf_Glyph :: struct {
+	codepoint: rune,
 	unhinted_curves: Glyph_Curves,
 
 	ordered_contour_lengths: []u16,
@@ -60,6 +63,8 @@ Ttf_Glyph :: struct {
 	min, max: [2]f32,
 	lsb, advance: f32,
 	hinting_instructions: []byte,
+
+	kerning: map[u16]f32,
 }
 
 Ttf_Reader :: struct {
@@ -91,7 +96,7 @@ Ttf_Table_Directory :: struct #packed {
 
 Ttf_Character_Map :: struct {
 	codepoint: rune,
-	glyph_index: u32,
+	glyph_index: u16,
 }
 
 TTF_TABLE_HEAD_MAGIC :: 0x5F0F3CF5
@@ -113,6 +118,123 @@ Ttf_Table_Head :: struct #packed {
 	font_direction_hint: Ttf_i16,
 	index_to_loc_format: Ttf_i16,
 	glyph_data_format: Ttf_i16,
+}
+
+Ttf_Table_GPOS_Header :: struct #packed {
+	major_version: Ttf_u16,
+	minor_version: Ttf_u16,
+	scripts_list_offset: Ttf_u16,
+	feature_list_offset: Ttf_u16,
+	lookup_list_offset: Ttf_u16,
+}
+
+Otf_Table_Lookup_Flag :: enum {
+	right_to_left,
+	ignore_base_glyphs,
+	ignore_ligatures,
+	ignore_marks,
+	use_mark_filtering_set,
+}
+Otf_Table_Lookup_Flags :: distinct bit_set[Otf_Table_Lookup_Flag; Ttf_u16]
+
+Otf_Table_Lookup_Header :: struct #packed {
+	lookup_count: Ttf_u16,
+}
+
+Otf_Subtable_Lookup_Header :: struct #packed {
+	lookup_type: Ttf_u16,
+	lookup_flag: Otf_Table_Lookup_Flags,
+	sub_table_count: Ttf_u16,
+}
+
+Otf_Table_Feature_Header :: struct #packed {
+	feature_count: Ttf_u16,
+}
+
+Otf_Table_Feature_Body :: struct #packed {
+	feature_params_offset: Ttf_Offset16,
+	lookup_index_count: Ttf_u16,
+}
+
+Otf_GPOS_Feature_Tag :: enum Ttf_u32 {
+	kern = 0x6B65726E
+}
+
+Otf_Feature_Record :: struct #packed {
+	feature_tag: Ttf_u32,
+	feature_offset: Ttf_Offset16,
+}
+
+Otf_Table_Coverage :: struct #packed {
+	format: Ttf_u16,
+	count: Ttf_u16,
+}
+
+Otf_Value_Record :: struct {
+	x_placement: Ttf_i16,
+	y_placement: Ttf_i16,
+	x_advance: Ttf_i16,
+	y_advance: Ttf_i16,
+	x_pla_device_offset: Ttf_Offset16,
+	y_pla_device_offset: Ttf_Offset16,
+	x_adv_device_offset: Ttf_Offset16,
+	y_adv_device_offset: Ttf_Offset16,
+}
+
+Otf_Value_Record_Flag :: enum {
+	x_placement = 0,
+	y_placement = 1,
+	x_advance = 2,
+	y_advance = 3,
+	x_placement_device = 4,
+	y_placement_device = 5,
+	x_advance_device = 6,
+	y_advance_device = 7,
+}
+Otf_Value_Record_Format :: bit_set[Otf_Value_Record_Flag; Ttf_u16]
+
+Otf_Table_GPOS_Pair_Pos_Format_1 :: struct #packed {
+	format: Ttf_u16,
+	coverage_offset: Ttf_Offset16,
+	value_format_1: Otf_Value_Record_Format,
+	value_format_2: Otf_Value_Record_Format,
+	pair_set_count: Ttf_u16,
+}
+
+Otf_GPOS_Pair_Pos_Format_1_Pair_Value_Set :: struct {
+	pair_value_count: Ttf_u16,
+}
+
+Otf_GPOS_Pair_Pos_Format_1_Pair_Value_Record :: struct {
+	second_glyph: Ttf_u16,
+}
+
+Otf_Table_GPOS_Pair_Pos_Format_2 :: struct #packed {
+	format: Ttf_u16,
+	coverage_offset: Ttf_Offset16,
+	value_format_1: Otf_Value_Record_Format,
+	value_format_2: Otf_Value_Record_Format,
+	class_def_1_offset: Ttf_Offset16,
+	class_def_2_offset: Ttf_Offset16,
+	class_1_count: Ttf_u16,
+	class_2_count: Ttf_u16,
+}
+
+Otf_Coverage_Format_2_Range_Record :: struct #packed {
+	start_glyph_id: Ttf_u16,
+	end_glyph_id: Ttf_u16,
+	start_coverage_index: Ttf_u16,
+}
+
+Ttf_Table_Kern :: struct #packed {
+	version: Ttf_Fixed,
+	n_tables: Ttf_u32,
+}
+
+Ttf_Subtable_Kern :: struct #packed {
+	length: Ttf_u32,
+	coverage: Ttf_u16,
+	tuple_index: Ttf_u16,
 }
 
 Ttf_Table_Horizontal_Header :: struct #packed {
@@ -258,6 +380,8 @@ Ttf_Tag :: enum {
 	maxp,
 	name,
 	post,
+	kern,
+	GPOS,
 }
 Ttf_Tags :: distinct bit_set[Ttf_Tag]
 TTF_REQUIRED_TABLES :: Ttf_Tags {
@@ -268,8 +392,8 @@ TTF_REQUIRED_TABLES :: Ttf_Tags {
 	.hmtx,
 	.loca,
 	.maxp,
-	.name, // NOTE(lucas): technically the spec requires this but some fonts do not have it
-	.post
+	.name,
+	.post,
 }
 
 ttf_u32_to_tag :: proc(tag: Ttf_u32) -> Ttf_Tag {
@@ -283,6 +407,8 @@ ttf_u32_to_tag :: proc(tag: Ttf_u32) -> Ttf_Tag {
 	case 0x6D617870: return .maxp
 	case 0x6E616D65: return .name
 	case 0x706F7374: return .post
+	case 0x6B65726E: return .kern
+	case 0x47504F53: return .GPOS
 	}
 	return .unknown
 }
@@ -340,6 +466,44 @@ ttf_read_t_slice :: proc($T: typeid, r: ^Ttf_Reader, len: i64) -> ([]T, bool) #o
 	} else {
 		return {}, false
 	}
+}
+
+ttf_read_value_record :: proc(r: ^Ttf_Reader, format: Otf_Value_Record_Format) -> (Otf_Value_Record, bool) #optional_ok {
+	result: Otf_Value_Record
+	if .x_placement in format {
+		result.x_placement = ttf_read_t_copy(Ttf_i16, r)
+	}
+	if .y_placement in format {
+		result.y_placement = ttf_read_t_copy(Ttf_i16, r)
+	}
+	if .x_advance in format {
+		result.x_advance = ttf_read_t_copy(Ttf_i16, r)
+	}
+	if .y_advance in format {
+		result.y_advance = ttf_read_t_copy(Ttf_i16, r)
+	}
+	if .x_placement_device in format {
+		result.x_pla_device_offset = ttf_read_t_copy(Ttf_Offset16, r)
+	}
+	if .y_placement_device in format {
+		result.y_pla_device_offset = ttf_read_t_copy(Ttf_Offset16, r)
+	}
+	if .x_advance_device in format {
+		result.x_adv_device_offset = ttf_read_t_copy(Ttf_Offset16, r)
+	}
+	if .y_advance_device in format {
+		result.y_adv_device_offset = ttf_read_t_copy(Ttf_Offset16, r)
+	}
+	return result, r.ctx.ok
+}
+ttf_value_record_size :: proc(format: Otf_Value_Record_Format) -> i64 {
+	result: i64
+	for f in Otf_Value_Record_Flag {
+		if f in format {
+			result += 2
+		}
+	}
+	return result
 }
 
 ttf_get_table_from_directory :: proc(ctx: ^Ttf_Read_Context, offset: i64, length: i64, data: []byte) -> ([]byte, bool) {
@@ -496,7 +660,7 @@ ttf_parse_cmap_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, allo
 					base_offset := lookup.offset
 					for c in lookup.start..=lookup.end {
 						if lookup.offset == 0 {
-							mapping[mapping_i] = { rune(c), u32(c + lookup.delta) }
+							mapping[mapping_i] = { rune(c), u16(c + lookup.delta) }
 							mapping_i += 1
 						} else {
 							index_of_mapping_byte := base_offset + 2 * (c - lookup.start)
@@ -506,7 +670,7 @@ ttf_parse_cmap_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, allo
 								if glyph_index != 0 {
 									glyph_index += lookup.delta
 								}
-								mapping[mapping_i] = { rune(c), u32(glyph_index) }
+								mapping[mapping_i] = { rune(c), u16(glyph_index) }
 								mapping_i += 1
 							} else {
 								ctx.ok = false
@@ -532,7 +696,7 @@ ttf_parse_cmap_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, allo
 			for _ in 0..<format_12_header.n_groups {
 				group, _ := ttf_read_t_ptr(Ttf_Table_Cmap_Format_12_Group, &subtable_reader)
 				for g in group.start_char_code..=group.end_char_code {
-					mapping[mapping_i] = { rune(g), u32(group.start_glyph_code + g - group.start_char_code) }
+					mapping[mapping_i] = { rune(g), u16(group.start_glyph_code + g - group.start_char_code) }
 					mapping_i += 1
 				}
 			}
@@ -545,30 +709,34 @@ ttf_parse_cmap_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, allo
 }
 
 ttf_parse_loca_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, head: ^Ttf_Table_Head, maxp: ^Ttf_Table_Maxp, allocator: mem.Allocator) -> ([]Ttf_Glyph_Loca, bool) {
-	result := make([]Ttf_Glyph_Loca, maxp.num_glyphs, allocator)
-	reader := Ttf_Reader { ctx, table.data, 0 }
-	if head.index_to_loc_format == 0 {
-		shorts, shorts_ok := ttf_read_t_slice(Ttf_u16, &reader, i64(len(result) + 1))
-		if shorts_ok {
-			for _, i in result {
-				result[i] = {
-					u32(shorts[i]) * 2,
-					u32(shorts[i + 1] - shorts[i]) * 2
+	result: []Ttf_Glyph_Loca
+	if table.valid {
+		result = make([]Ttf_Glyph_Loca, maxp.num_glyphs, allocator)
+		reader := Ttf_Reader { ctx, table.data, 0 }
+		if head.index_to_loc_format == 0 {
+			shorts, shorts_ok := ttf_read_t_slice(Ttf_u16, &reader, i64(len(result) + 1))
+			if shorts_ok {
+				for _, i in result {
+					result[i] = {
+						u32(shorts[i]) * 2,
+						u32(shorts[i + 1] - shorts[i]) * 2
+					}
+				}
+			}
+		} else {
+			longs, longs_ok := ttf_read_t_slice(Ttf_u32, &reader, i64(len(result) + 1))
+			if longs_ok {
+				for _, i in result {
+					 result[i] = {
+						u32(longs[i]),
+						u32((longs[i + 1] - longs[i]))
+					}
 				}
 			}
 		}
 	} else {
-		longs, longs_ok := ttf_read_t_slice(Ttf_u32, &reader, i64(len(result) + 1))
-		if longs_ok {
-			for _, i in result {
-				 result[i] = {
-					u32(longs[i]),
-					u32((longs[i + 1] - longs[i]))
-				}
-			}
-		}
+		ctx.ok = false
 	}
-
 	return result, ctx.ok
 }
 
@@ -657,7 +825,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 				flags = ttf_read_t_slice(Ttf_Glyf_Single_Flags, &reader, i64(flags_bytes_parsed))
 			}
 			// NOTE(lucas): parse coordinates
-			_parse_coordinate :: proc(short_vec_flag: Ttf_Glyf_Single_Flag, is_same_flag: Ttf_Glyf_Single_Flag, number_of_points: int, flags: []Ttf_Glyf_Single_Flags, reader: ^Ttf_Reader, write_coordinate: [][2]f32, coord_index: int, write_on_curve_points: []bool) {
+			_parse_coordinate :: proc(short_vec_flag: Ttf_Glyf_Single_Flag, is_same_flag: Ttf_Glyf_Single_Flag, number_of_points: int, flags: []Ttf_Glyf_Single_Flags, reader: ^Ttf_Reader, write_coordinate: [][2]i16, coord_index: int, write_on_curve_points: []bool) {
 				flags_parsed := 0
 				coordinates_added := 0
 				prev_coordinate: i16
@@ -683,7 +851,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 						}
 						coordinate += prev_coordinate
 						prev_coordinate = coordinate
-						write_coordinate[coordinates_added][coord_index] = f32(coordinate)
+						write_coordinate[coordinates_added][coord_index] = coordinate
 						write_on_curve_points[coordinates_added] = .on_curve in flag
 						coordinates_added += 1
 					}
@@ -721,20 +889,20 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 						p0 := glyph.points[i + start]
 						if p0.on_curve {
 							// NOTE(lucas): p0 is on the curve so we just commit it as a point
-							append(&points, p0.coord)
+							append(&points, [2]f32 { f32(p0.coord.x), f32(p0.coord.y) })
 							append(&types, Glyph_Coordinate_Type.point)
 						} else {
 							// NOTE(lucas) p0 is not on the curve so we have some quadratic curve to solve
-							append(&points, p0.coord)
+							append(&points, [2]f32 { f32(p0.coord.x), f32(p0.coord.y) })
 							if i != 0 {
 								p1 := glyph.points[(i + 1) % actual_length + start]
 								new_point: [2]f32
 								if p1.on_curve {
-									new_point = p1.coord
+									new_point = [2]f32 { f32(p1.coord.x), f32(p1.coord.y) }
 									i += 1 // NOTE(lucas): don't double count this coordinate
 								} else {
 									// NOTE(lucas): implied point between p0 and p1
-									new_point = (p0.coord + p1.coord) * 0.5
+									new_point = ([2]f32 { f32(p1.coord.x), f32(p1.coord.y) } + [2]f32 { f32(p0.coord.x), f32(p0.coord.y) }) * 0.5
 								}
 								append(&points, new_point)
 								append(&types, Glyph_Coordinate_Type.quadratic)
@@ -751,7 +919,7 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 						// NOTE(lucas): we only need to add in another point if the last
 						// point was on the curve
 						if glyph.points[start + actual_length - 1].on_curve {
-							append(&points, p0.coord)
+							append(&points, [2]f32 { f32(p0.coord.x), f32(p0.coord.y) })
 							append(&types, Glyph_Coordinate_Type.point)
 						} 
 					} else if actual_length > 0 {
@@ -799,14 +967,21 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 	reader := Ttf_Reader { &ctx, data, 0 }
 
 	ttf_offset_subtable, _ := ttf_read_t_ptr(Ttf_Offset_Subtable, &reader)
+	required_tables: Ttf_Tags
+	use_glyf := false
+	use_cff := false
 	switch ttf_offset_subtable.scalar_type {
 	case 0x74727565, 0x00010000:
-	case 0x4F54544F: fallthrough
+		use_glyf = true
+		required_tables = TTF_REQUIRED_TABLES
+	case 0x4F54544F: 
+		use_cff = true
+		required_tables = {} // TODO(lucas): add required tables here
+		return {}, true
 	case:
 		log.error("[Ttf parser] Unsupported table font type")
 		ctx.ok = false
-		// HACK(lucas): just to get around post script tables
-		return {}, true
+		return {}, false
 	}
 	ttf_tables, _ := ttf_read_t_slice(Ttf_Table_Directory, &reader, i64(ttf_offset_subtable.num_tables))
 
@@ -859,12 +1034,27 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 	locas := ttf_parse_loca_table(&ctx, parsed_table_data[.loca], head, maxp, scratch.arena) or_return
 	mapping := ttf_parse_cmap_table(&ctx, parsed_table_data[.cmap], TTF_CMAP_FORMATS_ALL, scratch.arena) or_return
 	glyf_result := ttf_parse_glyf_table(&ctx, parsed_table_data[.glyf], locas, maxp, allocator, scratch.arena) or_return
-	ttf_parse_hmtx_table(&ctx, parsed_table_data[.hmtx], hhea, glyf_result.glyphs) or_return
-	codepoint_to_glyph_index_map := make(map[rune]u32, len(mapping) * 2, allocator)
+	codepoint_to_glyph_index_map := make(map[rune]u16, len(mapping) * 2, allocator)
 	for m in mapping {
-		if m.glyph_index != 0 {
+		if m.glyph_index != 0 && int(m.glyph_index) < len(glyf_result.glyphs) {
 			codepoint_to_glyph_index_map[m.codepoint] = m.glyph_index
+			glyf_result.glyphs[m.glyph_index].codepoint = m.codepoint
 		}
+	}
+
+	ttf_parse_hmtx_table(&ctx, parsed_table_data[.hmtx], hhea, glyf_result.glyphs) or_return
+	if .GPOS in parsed_table_tags {
+		ttf_parse_GPOS_table(&ctx, parsed_table_data[.GPOS], glyf_result.glyphs, allocator) or_return
+	} else if .kern in parsed_table_tags {
+		ttf_parse_kern_table(&ctx, parsed_table_data[.kern]) or_return
+	}
+
+	if ctx.ok {
+		total_allocation := f64(base.arena_calc_total_allocations(arena))
+		mb_total := total_allocation / mem.Megabyte
+		kb_per_glyph := total_allocation / f64(len(glyf_result.glyphs)) / mem.Kilobyte
+		input_size := f64(len(data)) / mem.Megabyte
+		log.infof("Parsed TTF using: %.2fMiB (%v glyphs, %.2f Kib per glyph) (input size was: %.2fMib)", mb_total, len(glyf_result.glyphs), kb_per_glyph, input_size)
 	}
 
 	result := Ttf_Font {
@@ -878,6 +1068,274 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 		arena,
 	}
 	return result, ctx.ok
+}
+
+Otf_Coverage_Pair :: struct {
+	glyph_id: Ttf_u16,
+	coverage_index: Ttf_u16,
+}
+Otf_Coverage_Pair_List :: #soa[]Otf_Coverage_Pair
+ttf_parse_coverage_table :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, allocator: mem.Allocator) -> (Otf_Coverage_Pair_List, bool) {
+	glyph_ids: []Ttf_u16
+	coverage_pairs: []Ttf_u16
+	coverage_reader := Ttf_Reader { ctx, data, offset }
+	coverage_table := ttf_read_t_ptr(Otf_Table_Coverage, &coverage_reader)
+	switch coverage_table.format {
+	case 1:
+		glyph_ids = ttf_read_t_slice(Ttf_u16, &coverage_reader, i64(coverage_table.count))
+		coverage_pairs = make([]Ttf_u16, len(glyph_ids), allocator)
+		for &c, i in coverage_pairs {
+			c = Ttf_u16(i)
+		}
+	case 2:
+		ranges := ttf_read_t_slice(Otf_Coverage_Format_2_Range_Record, &coverage_reader, i64(coverage_table.count))
+		total_glyphs := 0
+		for range in ranges {
+			total_glyphs += 1 + int(range.end_glyph_id - range.start_glyph_id)
+		}
+		glyph_ids = make([]Ttf_u16, total_glyphs, allocator)
+		coverage_pairs = make([]Ttf_u16, total_glyphs, allocator)
+		i := 0
+		for range in ranges {
+			for c in range.start_glyph_id..=range.end_glyph_id {
+				glyph_ids[i] = c 
+				coverage_pairs[i] = range.start_coverage_index + c - range.start_glyph_id
+				i += 1
+			}
+		}
+	case: ctx.ok = false
+	}
+	return soa_zip(glyph_ids, coverage_pairs), ctx.ok
+}
+
+Otf_Class_Range :: struct #packed {
+	start_glyph_id: Ttf_u16,
+	end_glyph_id: Ttf_u16,
+	class: Ttf_u16,
+}
+
+ttf_get_glyph_class :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, glyph: Ttf_u16) -> (Ttf_u16, bool) {
+	class_reader := Ttf_Reader { ctx, data, offset }
+	format := ttf_read_t_copy(Ttf_u16, &class_reader)
+	result: Ttf_u16
+	has_class := false
+	switch format {
+	case 1:
+		start_glyph_id := ttf_read_t_copy(Ttf_u16, &class_reader)
+		glyph_count := ttf_read_t_copy(Ttf_u16, &class_reader)
+		class_values := ttf_read_t_slice(Ttf_u16, &class_reader, i64(glyph_count))
+		if glyph >= start_glyph_id && glyph < start_glyph_id + glyph_count {
+			result = class_values[glyph - start_glyph_id]
+			has_class = true
+		}
+	case 2:
+		class_range_count := ttf_read_t_copy(Ttf_u16, &class_reader)
+		class_ranges := ttf_read_t_slice(Otf_Class_Range, &class_reader, i64(class_range_count))
+		// TODO(lucas): binary search
+		for range, i in class_ranges {
+			if glyph >= range.start_glyph_id && glyph <= range.end_glyph_id {
+				result = range.class
+				has_class = true
+			}
+			if has_class {
+				break
+			}
+		}
+	case: ctx.ok = false
+	}
+	return result, ctx.ok && has_class
+}
+
+
+// TODO(lucas): do a better lookup structure than this
+ttf_class_to_glyph_id_list :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, allocator: mem.Allocator) -> (map[u16][dynamic]Ttf_u16, bool) {
+	class_reader := Ttf_Reader { ctx, data, offset }
+	format := ttf_read_t_copy(Ttf_u16, &class_reader)
+	result := make(map[u16][dynamic]Ttf_u16, allocator)
+	switch format {
+	case 1:
+		start_glyph_id := ttf_read_t_copy(Ttf_u16, &class_reader)
+		glyph_count := ttf_read_t_copy(Ttf_u16, &class_reader)
+		class_values := ttf_read_t_slice(Ttf_u16, &class_reader, i64(glyph_count))
+		for be_class_id, i in class_values {
+			glyph_id := start_glyph_id + Ttf_u16(i)
+			class := u16(be_class_id)
+			if class not_in result {
+				result[class] = make([dynamic]Ttf_u16, allocator)
+			}
+			append(&result[class], glyph_id)
+		}
+	case 2:
+		class_range_count := ttf_read_t_copy(Ttf_u16, &class_reader)
+		class_ranges := ttf_read_t_slice(Otf_Class_Range, &class_reader, i64(class_range_count))
+		// TODO(lucas): binary search
+		found := false
+		for range in class_ranges {
+			class := u16(range.class)
+			if class not_in result {
+				result[u16(range.class)] = make([dynamic]Ttf_u16, allocator)
+			}
+			dyn_array := &result[class]
+			for glyph_id in range.start_glyph_id..=range.end_glyph_id {
+				append(dyn_array, glyph_id)
+			}
+		}
+	case: ctx.ok = false
+	}
+
+	return result, ctx.ok
+}
+
+ttf_parse_GPOS_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, glyphs: []Ttf_Glyph, allocator: mem.Allocator) -> bool {
+	scratch := base.arena_scratch({ allocator })
+
+	if table.valid {
+		head: ^Ttf_Table_GPOS_Header
+		feature_variations_offset: Ttf_u32
+		{
+			reader := Ttf_Reader { ctx, table.data, 0 }
+			head = ttf_read_t_ptr(Ttf_Table_GPOS_Header, &reader)
+			if head.minor_version == 1 {
+				feature_variations_offset = ttf_read_t_copy(Ttf_u32, &reader)
+			}
+		}
+		// NOTE(lucas): parse feature list
+		lookup_list_indices: []Ttf_u16
+		{
+			feature_reader := Ttf_Reader { ctx, table.data, i64(head.feature_list_offset) }
+			feature_head := ttf_read_t_ptr(Otf_Table_Feature_Header, &feature_reader)
+			feature_records := ttf_read_t_slice(Otf_Feature_Record, &feature_reader, i64(feature_head.feature_count))
+			for f in feature_records {
+				body_reader := Ttf_Reader { ctx, table.data, i64(head.feature_list_offset) + i64(f.feature_offset) }
+				body := ttf_read_t_ptr(Otf_Table_Feature_Body, &body_reader)
+				if f.feature_tag == Ttf_u32(Otf_GPOS_Feature_Tag.kern) {
+					lookup_list_indices = ttf_read_t_slice(Ttf_u16, &body_reader, i64(body.lookup_index_count))
+				}
+			}
+		}
+		// NOTE(lucas): parse lookup list
+		{
+			lookup_reader := Ttf_Reader { ctx, table.data, i64(head.lookup_list_offset) }
+			lookup_head := ttf_read_t_ptr(Otf_Table_Lookup_Header, &lookup_reader)
+			lookup_tables_offsets := ttf_read_t_slice(Ttf_Offset16, &lookup_reader, i64(lookup_head.lookup_count))
+			for kern_index in lookup_list_indices {
+				if int(kern_index) >= len(lookup_tables_offsets) {
+					ctx.ok = false
+					break
+				}
+				lookup_offset := i64(head.lookup_list_offset) + i64(lookup_tables_offsets[kern_index])
+				lookup_reader = Ttf_Reader { ctx, table.data, lookup_offset }
+				lookup_subtable := ttf_read_t_ptr(Otf_Subtable_Lookup_Header, &lookup_reader)
+				subtable_offsets := ttf_read_t_slice(Ttf_Offset16, &lookup_reader, i64(lookup_subtable.sub_table_count))
+				mark_filtering_set: Ttf_u16
+				if .use_mark_filtering_set in lookup_subtable.lookup_flag {
+					mark_filtering_set = ttf_read_t_copy(Ttf_u16, &lookup_reader)
+				}
+				for offset in subtable_offsets {
+					subtable_offset := lookup_offset + i64(offset)
+					lookup_reader = Ttf_Reader { ctx, table.data, subtable_offset }
+					base.arena_temp_scope(scratch.arena)
+
+					switch lookup_subtable.lookup_type {
+					case 2:
+						lookup_reader_copy := lookup_reader
+						record_type := ttf_read_t_copy(Ttf_u16, &lookup_reader)
+						lookup_reader = lookup_reader_copy
+						switch record_type {
+						case 1:
+							pair_pos_f1 := ttf_read_t_ptr(Otf_Table_GPOS_Pair_Pos_Format_1, &lookup_reader)
+							pair_set_offsets := ttf_read_t_slice(Ttf_Offset16, &lookup_reader, i64(pair_pos_f1.pair_set_count))
+							glyph_coverages, coverage_ok := ttf_parse_coverage_table(ctx, table.data, subtable_offset + i64(pair_pos_f1.coverage_offset), scratch.arena)
+							for coverage in glyph_coverages {
+								first_glyph := coverage.glyph_id
+								if int(coverage.coverage_index) >= len(pair_set_offsets) {
+									ctx.ok = false
+									continue
+								}
+								if int(first_glyph) >= len(glyphs) {
+									ctx.ok = false
+									continue
+								}
+								pair_offset := pair_set_offsets[coverage.coverage_index]
+								pair_reader := Ttf_Reader { ctx, table.data, subtable_offset + i64(pair_offset) }
+								pair_value_set := ttf_read_t_copy(Otf_GPOS_Pair_Pos_Format_1_Pair_Value_Set, &pair_reader)
+								glyph := &glyphs[first_glyph]
+								if glyph.kerning == nil {
+									glyph.kerning = make(map[u16]f32, int(pair_value_set.pair_value_count) * 2, allocator)
+								}
+								for i in 0..<pair_value_set.pair_value_count {
+									second_glyph := ttf_read_t_copy(Ttf_u16, &pair_reader)
+									second_glyph_rune := glyphs[second_glyph].codepoint // NOTE(lucas): for debugger
+									_ = second_glyph_rune
+									value_1 := ttf_read_value_record(&pair_reader, pair_pos_f1.value_format_1)
+									value_2 := ttf_read_value_record(&pair_reader, pair_pos_f1.value_format_2)
+									kern := i16(value_1.x_advance)
+									if kern != 0 {
+										glyph.kerning[u16(second_glyph)] = f32(kern)
+									}
+								}
+							}
+						case 2:
+							pair_pos_f2 := ttf_read_t_ptr(Otf_Table_GPOS_Pair_Pos_Format_2, &lookup_reader)
+							glyph_coverages, coverage_ok := ttf_parse_coverage_table(ctx, table.data, subtable_offset + i64(pair_pos_f2.coverage_offset), scratch.arena)
+
+							class2_lookup, class2_lookup_ok := ttf_class_to_glyph_id_list(ctx, table.data, subtable_offset + i64(pair_pos_f2.class_def_2_offset), scratch.arena)
+							if ! class2_lookup_ok {
+								continue
+							}
+
+							class_1_value_offset := (ttf_value_record_size(pair_pos_f2.value_format_1) + ttf_value_record_size(pair_pos_f2.value_format_2)) * i64(pair_pos_f2.class_2_count)
+
+							for coverage in glyph_coverages {
+								first_glyph := coverage.glyph_id
+								glyph := &glyphs[first_glyph]
+								glyph_class, glyph_class_ok := ttf_get_glyph_class(ctx, table.data, subtable_offset + i64(pair_pos_f2.class_def_1_offset), first_glyph)
+								if ! glyph_class_ok {
+									continue
+								}
+
+								value_reader_offset := i64(glyph_class) * class_1_value_offset + subtable_offset + size_of(Otf_Table_GPOS_Pair_Pos_Format_2)
+								value_reader := Ttf_Reader { ctx, table.data, value_reader_offset }
+
+								if glyph.kerning == nil {
+									glyph.kerning = make(map[u16]f32, allocator)
+								}
+
+								for i in 0..<pair_pos_f2.class_2_count {
+									value_1 := ttf_read_value_record(&value_reader, pair_pos_f2.value_format_1)
+									value_2 := ttf_read_value_record(&value_reader, pair_pos_f2.value_format_2)
+									second_glyphs := class2_lookup[u16(i)]
+									for second_glyph in second_glyphs {
+										second_glyph_rune := glyphs[second_glyph].codepoint // NOTE(lucas): for debugger
+										_ = second_glyph_rune
+										kern := i16(value_1.x_advance)
+										if kern != 0 {
+											glyph.kerning[u16(second_glyph)] = f32(kern)
+										}
+									}
+								}
+							}
+						case: ctx.ok = false
+						}
+					}
+				}
+			}
+		}
+	} else {
+		ctx.ok = false
+	}
+	return ctx.ok
+}
+
+ttf_parse_kern_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> bool {
+	if table.valid {
+		reader := Ttf_Reader { ctx, table.data, 0 }
+		kern_table, _ := ttf_read_t_ptr(Ttf_Table_Kern, &reader)
+		// TODO(lucas): implement with a reference font
+	} else {
+		ctx.ok = false
+	}
+	return ctx.ok
 }
 
 ttf_from_file_path :: proc(path: string, allocator: mem.Allocator) -> (_result: Ttf_Font, _ok: bool) {
