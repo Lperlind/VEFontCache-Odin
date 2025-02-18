@@ -2,16 +2,9 @@ package vefontcache
 
 // Add profiling hookup here
 
-// import ""
+import "./prof"
 
-@(deferred_none = profile_end, disabled = DISABLE_PROFILING)
-profile :: #force_inline proc "contextless" ( name : string, loc := #caller_location ) {
-}
+profile :: prof.profile
+profile_begin :: prof.profile_begin
+profile_end :: prof.profile_end
 
-@(disabled = DISABLE_PROFILING)
-profile_begin :: #force_inline proc "contextless" ( name : string, loc := #caller_location ) {
-}
-
-@(disabled = DISABLE_PROFILING)
-profile_end :: #force_inline proc "contextless" () {
-}

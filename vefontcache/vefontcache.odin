@@ -4,7 +4,7 @@ See: https://github.com/Ed94/VEFontCache-Odin
 package vefontcache
 
 // See: mappings.odin for profiling hookup
-DISABLE_PROFILING              :: true
+DISABLE_PROFILING              :: false
 ENABLE_OVERSIZED_GLYPHS        :: true
 // White: Cached Hit, Red: Cache Miss, Yellow: Oversized (Will override user's colors enabled)
 ENABLE_DRAW_TYPE_VISUALIZATION :: false
@@ -765,7 +765,7 @@ draw_text_normalized_space :: proc( ctx : ^Context,
 	position    : Vec2,
 	scale       : Vec2, 
 	text_utf8   : string,
-	shaper_proc : $Shaper_Shape_Text_Uncached_Proc = shaper_shape_harfbuzz
+	shaper_proc : $Shaper_Shape_Text_Uncached_Proc = shaper_shape_text_latin
 )
 {
 	profile(#procedure)

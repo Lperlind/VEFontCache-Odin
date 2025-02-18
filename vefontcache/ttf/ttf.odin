@@ -11,6 +11,11 @@ import "core:slice"
 import "base:intrinsics"
 
 import "../base"
+import "../prof"
+
+profile :: prof.profile
+profile_begin :: prof.profile_begin
+profile_end :: prof.profile_end
 
 Ttf_ShortFrac :: i16be
 Ttf_Fixed :: i32be
@@ -445,13 +450,18 @@ ttf_u32_to_tag :: proc(tag: Ttf_u32) -> Ttf_Tag {
 	return .unknown
 }
 
+@(cold)
+_read_fail :: proc(r: ^Ttf_Reader, loc := #caller_location) {
+	if r.ctx.ok && ! r.ctx.illegal_read_no_message {
+		log.error("[Ttf parser] Illegal read", location = loc)
+	}
+	r.ctx.ok = false
+}
+
 ttf_read_bytes_copy :: proc(r: ^Ttf_Reader, size: i64, ptr: rawptr, loc := #caller_location) -> (bool) #no_bounds_check {
 	head, did_overflow := intrinsics.overflow_add(r.offset, size)
 	if ! r.ctx.ok || did_overflow || size > i64(max(int)) || head > i64(len(r.data)) || size < 0 {
-		if r.ctx.ok && ! r.ctx.illegal_read_no_message {
-			log.error("[Ttf parser] Illegal read", location = loc)
-		}
-		r.ctx.ok = false
+		_read_fail(r, loc)
 		return false
 	}
 	if ptr != nil && size > 0 {
@@ -464,10 +474,7 @@ ttf_read_bytes_copy :: proc(r: ^Ttf_Reader, size: i64, ptr: rawptr, loc := #call
 ttf_read_bytes_ptr :: proc(r: ^Ttf_Reader, size: i64, ptr: ^rawptr, loc := #caller_location) -> (bool) #no_bounds_check {
 	head, did_overflow := intrinsics.overflow_add(r.offset, size)
 	if ! r.ctx.ok || did_overflow || size > i64(max(int)) || head > i64(len(r.data)) || size < 0 {
-		if r.ctx.ok && ! r.ctx.illegal_read_no_message {
-			log.error("[Ttf parser] Illegal read", location = loc)
-		}
-		r.ctx.ok = false
+		_read_fail(r, loc)
 		return false
 	}
 	if ptr != nil && size > 0 {
@@ -743,6 +750,8 @@ ttf_table_check_sum :: proc(data: []byte) -> Ttf_u32 {
 }
 
 ttf_parse_head_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> (^Ttf_Table_Head, bool) {
+	profile(#procedure)
+
 	@(static) _dummy: Ttf_Table_Head
 	result: ^Ttf_Table_Head = &_dummy
 	if table.valid {
@@ -761,6 +770,8 @@ ttf_parse_head_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> (
 }
 
 ttf_parse_maxp_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, scratch: mem.Allocator) -> (^Ttf_Table_Maxp, bool) {
+	profile(#procedure)
+
 	@(static) _dummy: Ttf_Table_Maxp
 	result: ^Ttf_Table_Maxp = &_dummy
 	if table.valid {
@@ -786,6 +797,8 @@ ttf_parse_maxp_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, scra
 }
 
 ttf_parse_hmtx_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, hhea: ^Ttf_Table_Horizontal_Header, glyphs: []Ttf_Glyph) -> (bool) {
+	profile(#procedure)
+
 	if table.valid {
 		reader := Ttf_Reader { ctx, table.data, 0 }
 		metrics, _ := ttf_read_t_slice(Ttf_Long_Hor_Metric_Record, &reader, i64(hhea.number_of_h_metrics))
@@ -812,6 +825,8 @@ ttf_parse_hmtx_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, hhea
 }
 
 ttf_parse_hhea_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> (^Ttf_Table_Horizontal_Header, bool) {
+	profile(#procedure)
+
 	@(static) _dummy: Ttf_Table_Horizontal_Header
 	result: ^Ttf_Table_Horizontal_Header = &_dummy
 	if table.valid {
@@ -825,6 +840,8 @@ ttf_parse_hhea_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> (
 }
 
 ttf_parse_cmap_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, allowed_formats: Ttf_Cmap_Formats, allocator: mem.Allocator) -> ([]Ttf_Character_Map, bool) {
+	profile(#procedure)
+
 	mapping: []Ttf_Character_Map
 	if table.valid {
 		reader := Ttf_Reader { ctx, table.data, 0 }
@@ -946,6 +963,8 @@ ttf_parse_cmap_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, allo
 }
 
 ttf_parse_loca_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, head: ^Ttf_Table_Head, maxp: ^Ttf_Table_Maxp, allocator: mem.Allocator) -> ([]Ttf_Glyph_Loca, bool) {
+	profile(#procedure)
+
 	result: []Ttf_Glyph_Loca
 	if table.valid {
 		result = make([]Ttf_Glyph_Loca, maxp.num_glyphs, allocator)
@@ -985,6 +1004,8 @@ Ttf_Parse_Glyf_Table_Result :: struct {
 }
 
 ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, locas: []Ttf_Glyph_Loca, maxp: ^Ttf_Table_Maxp, allocator: mem.Allocator, scratch: ^base.Arena) -> (Ttf_Parse_Glyf_Table_Result, bool) {
+	profile(#procedure)
+
 	glyphs := make([]Ttf_Glyph, len(locas), allocator)
 	global_min: [2]f32 = math.INF_F32
 	global_max: [2]f32 = math.NEG_INF_F32
@@ -1191,6 +1212,8 @@ ttf_parse_glyf_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, loca
 
 
 ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp: ^Ttf_Table_Maxp, allocator: mem.Allocator) -> (Ttf_Parse_Glyf_Table_Result, bool) {
+	profile(#procedure)
+
 	glyphs: []Ttf_Glyph
 	global_min: [2]f32 = math.INF_F32
 	global_max: [2]f32 = math.NEG_INF_F32
@@ -1263,6 +1286,7 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 		}
 
 		for glyph_idx in 0..<maxp.num_glyphs {
+			profile("Type 2 Interpreter")
 			base.arena_temp_scope(scratch.arena)
 			glyph_data := cff_index_get(char_strings_index, i64(glyph_idx))
 			_ = glyph_data
@@ -1753,6 +1777,8 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 }
 
 ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_Font, _ok: bool) {
+	profile(#procedure)
+
 	context.logger = log.create_console_logger()
 
 	allocator := allocator
@@ -1792,6 +1818,7 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 
 	// NOTE(lucas): gather tables
 	for &table in ttf_tables {
+		profile("gather table")
 		tag := ttf_u32_to_tag(table.tag)
 		table_data, table_ok := ttf_get_table_from_directory(&ctx, i64(table.offset), i64(table.length), data); if table_ok {
 			parsed_table_tags += { tag }
@@ -1809,6 +1836,7 @@ ttf_from_data :: proc(data: []byte, allocator: mem.Allocator) -> (_result: Ttf_F
 		if tag == .unknown {
 			continue
 		}
+		profile("checksum table")
 
 		parsed_info := parsed_table_data[tag]
 		if ! parsed_info.valid {
@@ -1884,6 +1912,7 @@ Otf_Coverage_Pair :: struct {
 }
 Otf_Coverage_Pair_List :: #soa[]Otf_Coverage_Pair
 ttf_parse_coverage_table :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, allocator: mem.Allocator) -> (Otf_Coverage_Pair_List, bool) {
+	profile(#procedure)
 	glyph_ids: []Ttf_u16
 	coverage_pairs: []Ttf_u16
 	coverage_reader := Ttf_Reader { ctx, data, offset }
@@ -1925,6 +1954,7 @@ Otf_Class_Range :: struct #packed {
 }
 
 ttf_get_glyph_class :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, glyph: Ttf_u16) -> (Ttf_u16, bool) {
+	profile(#procedure)
 	class_reader := Ttf_Reader { ctx, data, offset }
 	format := ttf_read_t_copy(Ttf_u16, &class_reader)
 	result: Ttf_u16
@@ -1959,6 +1989,7 @@ ttf_get_glyph_class :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, g
 
 // TODO(lucas): do a better lookup structure than this
 ttf_class_to_glyph_id_list :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset: i64, allocator: mem.Allocator) -> (map[u16][dynamic]Ttf_u16, bool) {
+	profile(#procedure)
 	class_reader := Ttf_Reader { ctx, data, offset }
 	format := ttf_read_t_copy(Ttf_u16, &class_reader)
 	result := make(map[u16][dynamic]Ttf_u16, allocator)
@@ -1997,6 +2028,8 @@ ttf_class_to_glyph_id_list :: proc(ctx: ^Ttf_Read_Context, data: []byte, offset:
 }
 
 ttf_parse_GPOS_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, glyphs: []Ttf_Glyph, allocator: mem.Allocator) -> bool {
+	profile(#procedure)
+
 	scratch := base.arena_scratch({ allocator })
 
 	if table.valid {
@@ -2045,6 +2078,7 @@ ttf_parse_GPOS_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, glyp
 				for count_or_add in 0..=1 {
 					count_kerns := count_or_add == 0
 					allocate_kerns := ! count_kerns
+					profile(allocate_kerns ? "gather + allocate kerns" : "count kerns")
 					if allocate_kerns {
 						for count, i in glyph_kerning_count {
 							if count > 0 {
@@ -2121,6 +2155,7 @@ ttf_parse_GPOS_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, glyp
 									value_reader := Ttf_Reader { ctx, table.data, value_reader_offset }
 
 									for i in 0..<pair_pos_f2.class_2_count {
+										profile("record")
 										value_1 := ttf_read_value_record(&value_reader, pair_pos_f2.value_format_1)
 										value_2 := ttf_read_value_record(&value_reader, pair_pos_f2.value_format_2)
 										second_glyphs := class2_lookup[u16(i)]
@@ -2150,6 +2185,8 @@ ttf_parse_GPOS_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, glyp
 }
 
 ttf_parse_kern_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob) -> bool {
+	profile(#procedure)
+
 	if table.valid {
 		reader := Ttf_Reader { ctx, table.data, 0 }
 		kern_table, _ := ttf_read_t_ptr(Ttf_Table_Kern, &reader)

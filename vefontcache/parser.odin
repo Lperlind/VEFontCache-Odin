@@ -50,7 +50,7 @@ Parser_Glyph_Vertex :: struct {
 	padding : u8,
 }
 // A shape can be a dynamic array free_type or an opaque set of data handled by stb_truetype
-Parser_Glyph_Shape :: [dynamic]Parser_Glyph_Vertex
+Parser_Glyph_Shape :: ttf.Glyph_Curves
 
 Parser_Context :: struct {
 	lib_backing : Allocator,
@@ -133,6 +133,7 @@ parser_unload_font :: proc( font : ^Parser_Font_Info )
 
 parser_find_glyph_index :: #force_inline proc "contextless" ( font : Parser_Font_Info, codepoint : rune ) -> (glyph_index : Glyph)
 {
+	profile(#procedure)
 	switch font.kind {
 	case .STB_TrueType:
 		glyph_index = transmute(Glyph) stbtt.FindGlyphIndex( font.stbtt_info, codepoint )
@@ -171,6 +172,7 @@ parser_get_codepoint_horizontal_metrics :: #force_inline proc "contextless" ( fo
 
 parser_get_codepoint_kern_advance :: #force_inline proc "contextless" ( font : Parser_Font_Info, prev_codepoint, codepoint : rune ) -> i32
 {
+	profile(#procedure)
 	kern: i32
 	switch font.kind {
 	case .STB_TrueType:
@@ -198,6 +200,7 @@ parser_get_font_vertical_metrics :: #force_inline proc "contextless" ( font : Pa
 
 parser_get_bounds :: #force_inline proc "contextless" ( font : Parser_Font_Info, glyph_index : Glyph ) -> (bounds : Range2)
 {
+	profile(#procedure)
 	glyph_index := glyph_index
 	switch font.kind {
 	case .STB_TrueType:
@@ -225,9 +228,11 @@ parser_get_bounds :: #force_inline proc "contextless" ( font : Parser_Font_Info,
 
 parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_index : Glyph ) -> (shape : Parser_Glyph_Shape, error : Allocator_Error)
 {
+	profile(#procedure)
 	glyph_index := glyph_index
 	switch font.kind {
 	case .STB_TrueType:
+		/*
 		stb_shape : [^]stbtt.vertex
 		nverts    := stbtt.GetGlyphShape( font.stbtt_info, cast(i32) glyph_index, & stb_shape )
 
@@ -237,14 +242,16 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 		shape_raw.cap       = int(nverts)
 		shape_raw.allocator = nil_allocator()
 		error = Allocator_Error.None
+		*/
 	case .Odin:
 		if glyph_index < 0 || int(glyph_index) >= len(font.odin_info.glyphs) {
 			glyph_index = 0
 		}
 		if len(font.odin_info.glyphs) > 0 {
 			glyph := font.odin_info.glyphs[glyph_index]
-			shape = make(Parser_Glyph_Shape, 0, len(glyph.points), context.allocator)
+			shape = glyph.unhinted_curves
 
+			/*
 			point_i := 0
 			for type_i := 0; type_i < len(glyph.unhinted_curves.type); type_i += 1 {
 				t := glyph.unhinted_curves.type[type_i]
@@ -273,6 +280,7 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 					append(&shape, Parser_Glyph_Vertex { i16(c3.x), i16(c3.y), i16(c2.x), i16(c2.y), i16(c1.x), i16(c1.y), .Cubic, 0 })
 				}
 			}
+			*/
 		}
 		error = Allocator_Error.None
 	}
@@ -281,6 +289,7 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 
 parser_is_glyph_empty :: #force_inline proc "contextless" ( font : Parser_Font_Info, glyph_index : Glyph ) -> b32
 {
+	profile(#procedure)
 	glyph_index := glyph_index
 	switch font.kind {
 	case .STB_TrueType:
@@ -305,6 +314,7 @@ parser_scale :: #force_inline proc "contextless" ( font : Parser_Font_Info, size
 
 parser_scale_for_pixel_height :: #force_inline proc "contextless" ( font : Parser_Font_Info, size : f32 ) -> f32
 {
+	profile(#procedure)
 	switch font.kind {
 	case .STB_TrueType:
 		return stbtt.ScaleForPixelHeight( font.stbtt_info, size )
@@ -316,6 +326,7 @@ parser_scale_for_pixel_height :: #force_inline proc "contextless" ( font : Parse
 
 parser_scale_for_mapping_em_to_pixels :: #force_inline proc "contextless" ( font : Parser_Font_Info, size : f32 ) -> f32
 {
+	profile(#procedure)
 	switch font.kind {
 	case .STB_TrueType:
 		return stbtt.ScaleForMappingEmToPixels( font.stbtt_info, size )

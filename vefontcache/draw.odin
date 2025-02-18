@@ -198,39 +198,38 @@ generate_glyph_pass_draw_list :: proc(draw_list : ^Draw_List, path : ^[dynamic]V
 	clear(path)
 
 	step := 1.0 / curve_quality
-	for edge, index in glyph_shape do #partial switch edge.type
-	{
-		case .Move:
-			if len(path) > 0 {
-				fill_path_via_fan_triangulation( draw_list, outside, path[:], scale, translate)
-				clear(path)
-			}
-			fallthrough
-		case .Line:
-			append( path, Vertex { pos = Vec2 { f32(edge.x), f32(edge.y)} } )
-
-		case .Curve:
-			assert(len(path) > 0)
+	point_i := 0
+	for type_i := 0; type_i < len(glyph_shape.type); type_i += 1 {
+		switch glyph_shape.type[type_i] {
+		case .new_curve:
+			fill_path_via_fan_triangulation( draw_list, outside, path[:], scale, translate)
+			clear(path)
+		case .point:
+			on_curve := glyph_shape.coordinates[point_i]
+			point_i += 1
+			append( path, Vertex { pos = on_curve } )
+		case .quadratic:
 			p0 := path[ len(path) - 1].pos
-			p1 := Vec2{ f32(edge.contour_x0), f32(edge.contour_y0) }
-			p2 := Vec2{ f32(edge.x), f32(edge.y) }
+			p1 := glyph_shape.coordinates[point_i]
+			p2 := glyph_shape.coordinates[point_i + 1]
+			point_i += 2
 
 			for index : f32 = 1; index <= curve_quality; index += 1 {
 				alpha := index * step
 				append( path, Vertex { pos = eval_point_on_bezier3(p0, p1, p2, alpha) } )
 			}
-
-		case .Cubic:
-			assert( len(path) > 0)
+		case .cubic:
 			p0 := path[ len(path) - 1].pos
-			p1 := Vec2{ f32(edge.contour_x0), f32(edge.contour_y0) }
-			p2 := Vec2{ f32(edge.contour_x1), f32(edge.contour_y1) }
-			p3 := Vec2{ f32(edge.x), f32(edge.y) }
+			p1 := glyph_shape.coordinates[point_i]
+			p2 := glyph_shape.coordinates[point_i + 1]
+			p3 := glyph_shape.coordinates[point_i + 2]
+			point_i += 3
 
 			for index : f32 = 1; index <= curve_quality; index += 1 {
 				alpha := index * step
 				append( path, Vertex { pos = eval_point_on_bezier4(p0, p1, p2, p3, alpha) } )
 			}
+		}
 	}
 
 	if len(path) > 0 {
@@ -597,7 +596,7 @@ batch_generate_glyphs_draw_list :: proc ( draw_list : ^Draw_List,
 			error : Allocator_Error
 			glyph_pack[pack_id].shape, error = parser_get_glyph_shape(entry.parser_info, shape.glyph[vis_id])
 			assert(error == .None)
-			assert(glyph_pack[pack_id].shape != nil)
+			// assert(glyph_pack[pack_id].shape != {})
 		}
 		for id, index in oversized
 		{
@@ -636,7 +635,7 @@ batch_generate_glyphs_draw_list :: proc ( draw_list : ^Draw_List,
 
 		flush_glyph_buffer_draw_list(draw_list, & glyph_buffer.draw_list, & glyph_buffer.clear_draw_list, & glyph_buffer.allocated_x)
 		for pack_id, index in oversized {
-			assert(glyph_pack[pack_id].shape != nil)
+			// assert(glyph_pack[pack_id].shape != {})
 			parser_free_shape(entry.parser_info, glyph_pack[pack_id].shape)
 		}
 	}
