@@ -16,7 +16,6 @@ STB_Truetype:
 */
 
 import "core:c"
-import "core:fmt"
 import stbtt    "thirdparty:stb/truetype"
 import ttf    "./ttf"
 
@@ -220,6 +219,7 @@ parser_get_bounds :: #force_inline proc "contextless" ( font : Parser_Font_Info,
 			bounds = { glyph_info.min, glyph_info.max }
 		}
 	}
+
 	return
 }
 
@@ -265,6 +265,12 @@ parser_get_glyph_shape :: #force_inline proc ( font : Parser_Font_Info, glyph_in
 					on_curve := glyph.unhinted_curves.coordinates[point_i + 1]
 					point_i += 2
 					append(&shape, Parser_Glyph_Vertex { i16(on_curve.x), i16(on_curve.y), i16(off_curve.x), i16(off_curve.y), 0, 0, .Curve, 0 })
+				case .cubic:
+					c1 := glyph.unhinted_curves.coordinates[point_i]
+					c2 := glyph.unhinted_curves.coordinates[point_i + 1]
+					c3 := glyph.unhinted_curves.coordinates[point_i + 2]
+					point_i += 3
+					append(&shape, Parser_Glyph_Vertex { i16(c3.x), i16(c3.y), i16(c2.x), i16(c2.y), i16(c1.x), i16(c1.y), .Cubic, 0 })
 				}
 			}
 		}

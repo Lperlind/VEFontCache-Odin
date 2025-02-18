@@ -1276,6 +1276,7 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 				current: [2]f32,
 				min: [2]f32,
 				max: [2]f32,
+				debug: bool,
 			}
 
 			// NOTE(lucas): this is a port from stb truetype
@@ -1295,7 +1296,9 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 			builder_ctx: Cff_Builder_Context = {
 				&types,
 				&points,
-				0, 0, math.INF_F32, math.NEG_INF_F32
+				0, 0,
+				math.INF_F32, math.NEG_INF_F32,
+				false
 			}
 
 			_builder_ctx_push :: proc(ctx: ^Cff_Builder_Context, coord: [][2]f32, type: Glyph_Coordinate_Type) {
@@ -1312,7 +1315,9 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 
 			_builder_ctx_close :: proc(ctx: ^Cff_Builder_Context) {
 				if ctx.start != ctx.current {
+					current := ctx.current
 					_builder_ctx_push(ctx, { ctx.start }, .point)
+					ctx.current = current
 				}
 			}
 
@@ -1331,7 +1336,7 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 
 			_builder_ctx_rcurve_to :: proc(ctx: ^Cff_Builder_Context, delta_0: [2]f32, delta_1: [2]f32, delta_2: [2]f32) {
 				coord_1 := ctx.current + delta_0
-				coord_2 := coord_1 + delta_0
+				coord_2 := coord_1 + delta_1
 				coord_3 := coord_2 + delta_2
 				_builder_ctx_push(ctx, { coord_1, coord_2, coord_3 }, .cubic)
 			}
@@ -1401,13 +1406,14 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 						if i >= sp {
 							break
 						}
+						
 						_builder_ctx_rline_to(&builder_ctx, { 0, stack[i] })
 						i += 1
 						if i >= sp {
 							break
 						}
-						i += 1
 						_builder_ctx_rline_to(&builder_ctx, { stack[i], 0 })
+						i += 1
 					}
 				case 0x06: // hlineto
 					if sp < 1 {
@@ -1424,8 +1430,8 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 						if i >= sp {
 							break
 						}
-						i += 1
 						_builder_ctx_rline_to(&builder_ctx, { 0, stack[i] })
+						i += 1
 					}
 				case 0x1F: // hvcurveto
 					if sp < 4 {
@@ -1493,7 +1499,7 @@ ttf_parse_cff_table :: proc(ctx: ^Ttf_Read_Context, table: Ttf_Table_Blob, maxp:
 						ctx.ok = false
 						return {}, false
 					}
-					for ; i + 5 < sp - 6; i += 2 {
+					for ; i + 1 < sp - 6; i += 2 {
 						_builder_ctx_rline_to(&builder_ctx, { stack[i], stack[i + 1] })
 					}
 					if i + 5 >= sp {
